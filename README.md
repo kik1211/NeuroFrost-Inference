@@ -1,118 +1,138 @@
 # 🧠 In-Ear Neurothermal Anomaly Detection via Embedded ML
 
-An experimental embedded machine learning proof-of-concept investigating the classification of temporal infrared thermal patterns in the ear canal using non-contact infrared thermometry and quantized neural networks.
+An experimental embedded machine learning proof-of-concept that classifies temporal infrared thermal patterns from the ear canal using non-contact thermometry and a quantized neural network running entirely on a microcontroller.
+
+> **⚠️ This is a research prototype. It is NOT a medical device. See [Disclaimer](docs/DISCLAIMER.md).**
 
 ---
 
 ## 🔬 Project Overview
 
-This repository contains firmware and an embedded inference SDK designed to evaluate temporal thermal dynamics in the ear canal. The tympanic region is anatomically adjacent to major cerebral arterial pathways. This project explores whether continuous, local temporal temperature readings—processed via on-device spectral feature extraction and a lightweight neural network—can distinguish baseline thermal dynamics from anomalous temporal profiles.
+This repository contains firmware and a compiled inference SDK that continuously sample tympanic-region temperature, extract spectral features from the time series, and classify each window as `normal` or `stroke` using an on-device neural network.
 
-This codebase represents the **embedded deployment and inference stage**. Model generation and training were conducted externally using Edge Impulse.
+The tympanic region is anatomically adjacent to cerebral arterial pathways. This project investigates whether temporal patterns in ear-canal infrared readings—processed locally on a microcontroller—can distinguish baseline thermal profiles from anomalous ones.
+
+**Scope:** This codebase covers the **embedded inference stage only**. Model training was performed externally using [Edge Impulse](https://www.edgeimpulse.com/). The training dataset and training scripts are not included.
 
 ---
 
 ## 🛠️ Hardware
 
-### Component Specifications
-
-| Component | Part / Library | Specification / Role |
+| Component | Part | Details |
 | :--- | :--- | :--- |
-| **Infrared Sensor** | MLX90614 | Medical-grade non-contact IR thermometer, factory-calibrated |
-| **Bus Interface** | I²C / SMBus | Default bus address `0x5A`, 2 Hz sampling frequency |
-| **Microcontroller** | Arduino-compatible MCU | Any C++ board supporting `<Wire.h>` and standard C++11 (e.g., SAMD21, ESP32, RP2040) |
+| **IR Sensor** | MLX90614 | Non-contact infrared thermometer. Factory-calibrated. I²C address `0x5A`. |
+| **Interface** | I²C / SMBus | Two-wire serial bus. Requires `SDA`, `SCL`, `VCC`, `GND`. |
+| **MCU** | Arduino-compatible board | Any board supporting `<Wire.h>` and the Edge Impulse C++ SDK (e.g., ESP32, SAMD21, RP2040). |
 
-### Hardware Setup Placeholder
-> `[ Hardware Setup Photograph Placeholder ]`  
-> *Connect MLX90614 VCC to 3.3V/5V, GND to GND, SDA to MCU SDA, and SCL to MCU SCL (with 4.7 kΩ pull-up resistors on SDA/SCL lines if required).*
+### Wiring
+
+| MLX90614 Pin | MCU Pin | Notes |
+| :--- | :--- | :--- |
+| VCC | 3.3 V or 5 V | Per sensor module board specification |
+| GND | GND | — |
+| SDA | SDA | 4.7 kΩ pull-up to VCC if not on breakout board |
+| SCL | SCL | 4.7 kΩ pull-up to VCC if not on breakout board |
+
+> `[ Hardware photograph placeholder ]`
 
 ---
 
 ## 💻 Software Stack
 
-| Layer | Component / Library | Source / Notes |
+| Layer | Component | Notes |
 | :--- | :--- | :--- |
-| **Firmware** | Arduino C++ (`neuro.ino`) | Main application sketch handling I²C sampling, buffering, and inference calls |
-| **Sensor Driver** | `Adafruit_MLX90614` | I²C driver library for reading object temperatures (`readObjectTempC`) |
-| **ML Engine** | Edge Impulse C++ SDK | Auto-generated SDK (`Neuro_Frost_inferencing/`) containing DSP and NN routines |
-| **Inference Runtime** | TensorFlow Lite for Microcontrollers | Embedded C++ neural network runtime compiled via Edge Impulse EON compiler |
-| **DSP Library** | CMSIS-DSP / Spectral Analysis | Performs 16-point FFT and spectral feature extraction on raw input frames |
+| **Firmware** | `neuro.ino` (Arduino C++) | Sensor polling, sample buffering, inference invocation, serial logging |
+| **Sensor Driver** | Adafruit MLX90614 Library | I²C driver; provides `readObjectTempC()` |
+| **Inference SDK** | `Neuro_Frost_inferencing/` | Auto-generated Edge Impulse C++ library (v1.0.2) containing DSP and NN code |
+| **NN Runtime** | TensorFlow Lite for Microcontrollers | EON-compiled int8 model; no interpreter overhead |
+| **DSP** | Edge Impulse Spectral Analysis | FFT-based feature extraction built into the SDK |
 
 ---
 
 ## 🧠 Machine Learning Pipeline
 
-### 1. Data Acquisition & Buffering
-* **Sampling Rate:** 2 Hz (1 sample every 500 ms / `EI_CLASSIFIER_INTERVAL_MS`).
-* **Input Window:** 8 raw temporal temperature readings (`EI_CLASSIFIER_RAW_SAMPLE_COUNT = 8`).
-* **Window Duration:** 4.0 seconds total temporal span.
-* **Windowing Mechanism:** **Synchronous Tumbling Window (Fixed Block Buffer)**. The firmware collects 8 sequential samples in a `while` loop with `delay(EI_CLASSIFIER_INTERVAL_MS)` between readings. Once 8 samples are collected, inference is executed, the buffer index resets (`feature_ix = 0`), and acquisition of the next 8-sample block begins.
+### 1. Data Acquisition
 
-### 2. DSP Spectral Feature Extraction
-The 8 temporal temperature samples are transformed by an Edge Impulse Spectral Analysis DSP block:
-* **Analysis Type:** Fast Fourier Transform (FFT, length 16)
-* **Features Extracted:** 13 spectral metrics (spectral peaks, power edges, log scale)
-* **DSP Output Size:** 13 features (`EI_CLASSIFIER_NN_INPUT_FRAME_SIZE = 13`)
+The firmware reads `mlx.readObjectTempC()` in a synchronous loop with `delay(EI_CLASSIFIER_INTERVAL_MS)` between samples.
 
-### 3. Neural Network Architecture
-The 13 spectral features feed into an `int8` fully-quantized neural network:
+| Parameter | Value | Source |
+| :--- | :--- | :--- |
+| Sampling interval | 500 ms (2 Hz) | `EI_CLASSIFIER_INTERVAL_MS` · `model_metadata.h:96` |
+| Samples per window | 8 | `EI_CLASSIFIER_RAW_SAMPLE_COUNT` · `model_metadata.h:88` |
+| Axes per sample | 1 (`temperature`) | `EI_CLASSIFIER_RAW_SAMPLES_PER_FRAME` · `model_metadata.h:89` |
+| Window duration | 4.0 s | 8 × 500 ms |
+| Windowing strategy | Tumbling (non-overlapping) | `neuro.ino:26-38,70` — buffer fills, infers, resets index to 0 |
+
+### 2. DSP — Spectral Feature Extraction
+
+The 8-sample buffer is passed to the Edge Impulse spectral analysis block, which produces **13 features**.
+
+| DSP Parameter | Value | Source |
+| :--- | :--- | :--- |
+| Analysis type | FFT | `model_variables.h:63` |
+| FFT length | 16 | `model_variables.h:64` |
+| Spectral peaks | 3 | `model_variables.h:65` |
+| Power edge frequencies | 0.1, 0.5, 1.0, 2.0, 5.0 Hz | `model_variables.h:67` |
+| Log scaling | Enabled | `model_variables.h:68` |
+| Output feature count | 13 | `EI_CLASSIFIER_NN_INPUT_FRAME_SIZE` · `model_metadata.h:87` |
+
+### 3. Neural Network
+
+| Layer | Type | Shape | Activation | Quantization |
+| :--- | :--- | :--- | :--- | :--- |
+| Input | — | (1, 13) | — | int8 affine |
+| Dense 1 | Fully Connected | (13) → (20) | ReLU | int8 |
+| Dense 2 | Fully Connected | (20) → (10) | ReLU | int8 |
+| Output | Fully Connected + Softmax | (10) → (2) | Softmax | int8 |
+
+**Classification labels:** `normal`, `stroke` — defined in `model_variables.h:50`.
+
+**Tensor arena size:** 368 bytes (default) / 2944 bytes (largest arena) — `tflite_learn_768102_9_compiled.cpp:99`, `model_metadata.h:112`.
+
+**Registered ops:** `FULLY_CONNECTED`, `SOFTMAX` — `tflite_learn_768102_9_compiled.cpp:568-569`.
+
+### Inference Flow
 
 ```text
-Input (13 Spectral Features)
-          │
-          ▼
-Dense Layer 1 (20 Neurons, ReLU, int8)
-          │
-          ▼
-Dense Layer 2 (10 Neurons, ReLU, int8)
-          │
-          ▼
-Output Layer (2 Neurons, Softmax, int8)
-          │
-          ▼
-Classification Labels: ["normal", "stroke"]
+MLX90614 (I2C)                    Edge Impulse SDK              Serial Output
+─────────────                     ────────────────              ─────────────
+readObjectTempC()  ──►  features[0..7]  ──►  Spectral DSP (13 features)
+                                             │
+                                             ▼
+                                        Dense NN (int8)
+                                        13 → 20 → 10 → 2
+                                             │
+                                             ▼
+                                        Softmax probabilities
+                                             │
+                                             ▼
+                                        Serial.println()
+                                        normal: 0.xxxx
+                                        stroke: 0.xxxx
 ```
 
-For full signal processing mechanics and data flow, see [`docs/INFERENCE_PIPELINE.md`](docs/INFERENCE_PIPELINE.md).
+> `[ Architecture diagram placeholder ]`
 
-### System Workflow Diagram
-```text
-┌────────────────────────────────┐
-│ Data Acquisition (I2C)         │  ──> Polls MLX90614 over I2C every 500 ms
-│ Buffers 8 temporal samples     │      Fixed 4.0s tumbling window
-└───────────────┬────────────────┘
-                │
-                ▼
-┌────────────────────────────────┐
-│ Spectral DSP Extraction        │  ──> Translates 8 temporal samples
-│ (Edge Impulse DSP Block)       │      into 13 spectral features
-└───────────────┬────────────────┘
-                │
-                ▼
-┌────────────────────────────────┐
-│ TFLite Micro Inference         │  ──> Executes int8 Dense NN
-│ (Local On-Device Execution)    │      Inputs: 13 ──> 20 ──> 10 ──> 2
-└───────────────┬────────────────┘
-                │
-                ▼
-┌────────────────────────────────┐
-│ Serial Output                  │  ──> Prints label confidences:
-│ (115200 Baud Log)              │      normal: 0.xxxx | stroke: 0.xxxx
-└────────────────────────────────┘
-```
-
-> `[ System Architecture Diagram Placeholder ]`
+For a detailed technical breakdown, see [`docs/INFERENCE_PIPELINE.md`](docs/INFERENCE_PIPELINE.md).
 
 ---
 
 ## 📂 Repository Structure
 
-```plaintext
-├── neuro.ino                 # Main Arduino sketch (I2C sampling, buffer management & inference)
-├── Neuro_Frost_inferencing/  # Compiled C++ Edge Impulse SDK (TFLite Micro + CMSIS-DSP)
-└── docs/                     # Project documentation
-    ├── DISCLAIMER.md         # Research & medical disclaimers
-    └── INFERENCE_PIPELINE.md # Detailed specification of sampling, DSP, and NN pipeline
+```
+├── neuro.ino                   Arduino sketch — sensor read loop, buffering, inference
+├── Neuro_Frost_inferencing/    Edge Impulse C++ SDK (auto-generated, read-only)
+│   ├── library.properties      Arduino library metadata
+│   ├── examples/               Board-specific example sketches (from Edge Impulse)
+│   └── src/
+│       ├── model-parameters/   Model constants, DSP config, label definitions
+│       ├── tflite-model/       EON-compiled int8 neural network weights and graph
+│       └── edge-impulse-sdk/   TFLite Micro runtime, CMSIS-DSP, classifier engine
+├── docs/
+│   ├── DISCLAIMER.md           Research and medical disclaimer
+│   └── INFERENCE_PIPELINE.md   Detailed sampling, DSP, and NN specification
+├── LICENSE                     Apache License 2.0
+└── .gitignore                  Build artifact exclusions
 ```
 
 ---
@@ -120,49 +140,68 @@ For full signal processing mechanics and data flow, see [`docs/INFERENCE_PIPELIN
 ## 🚀 Build Instructions
 
 ### Prerequisites
-1. **Arduino IDE** (v1.8.x or v2.x).
-2. **Adafruit MLX90614 Library** installed via Arduino Library Manager.
 
-### Installation & Flashing
-1. **Import Inference Library:**
-   - Copy the `Neuro_Frost_inferencing` folder into your Arduino `libraries` folder (e.g., `Documents/Arduino/libraries/`).
-2. **Open Sketch:**
-   - Open `neuro.ino` in Arduino IDE.
-3. **Configure & Upload:**
-   - Select your target Arduino-compatible board and COM port under **Tools > Board** and **Tools > Port**.
-   - Click **Upload**.
-4. **Monitor Output:**
-   - Open **Serial Monitor** and set the baud rate to **115200 baud**.
+1. **Arduino IDE** v1.8.x or v2.x.
+2. **Adafruit MLX90614 Library** — install via *Sketch → Include Library → Manage Libraries*.
+
+### Steps
+
+1. Copy `Neuro_Frost_inferencing/` into your Arduino libraries folder  
+   (e.g., `~/Documents/Arduino/libraries/Neuro_Frost_inferencing/`).
+2. Open `neuro.ino` in Arduino IDE.
+3. Select your board and port under **Tools**.
+4. Click **Upload**.
+5. Open **Serial Monitor** at **115200 baud**.
+
+### Expected Serial Output
+
+```
+MLX90614 + Edge Impulse inference started...
+Sample 0: 36.47 C
+Sample 1: 36.51 C
+...
+Sample 7: 36.49 C
+Inference results:
+normal: 0.9412
+stroke: 0.0588
+--------------------------
+```
 
 ---
 
 ## ⚠️ Limitations
 
-1. **Experimental Prototype:** This software is an engineering proof-of-concept and has not undergone clinical trials or medical validation.
-2. **Synchronous Tumbling Buffer:** The current `neuro.ino` sketch uses a blocking `delay(500)` loop during data acquisition. It evaluates non-overlapping 8-sample blocks rather than a continuous sliding window.
-3. **Environmental Drift:** Infrared thermometry can be affected by ambient room temperature variations and physical sensor placement stability.
-4. **Model Dataset Excluded:** The raw training dataset and model generation scripts are not hosted in this repository; only the compiled inference SDK is included.
+| Limitation | Detail |
+| :--- | :--- |
+| **Not a medical device** | This is an engineering proof-of-concept. No clinical validation has been performed. |
+| **Blocking acquisition loop** | `neuro.ino` uses `delay(500)` inside a `while` loop, blocking the MCU for ~4 s per inference cycle. |
+| **No sensor error handling** | I²C read failures or NaN returns from the sensor are not checked before buffering. |
+| **Tumbling window only** | Non-overlapping 8-sample blocks; no sliding window or overlap. Temporal discontinuities at block boundaries are not captured. |
+| **No ambient compensation** | Readings may drift with ambient temperature, sensor repositioning, or body movement. |
+| **Training data not included** | The dataset and Edge Impulse project configuration used to train this model are not in this repository. Model performance metrics cannot be independently verified from repository contents alone. |
+| **Boot lockup on sensor failure** | If `mlx.begin()` fails at startup, the MCU enters `while(1)` and cannot recover without a hardware reset. |
 
 ---
 
 ## ⚖️ Disclaimer
 
-This project is an **experimental prototype and research exploration**. It is **NOT** a clinically validated medical diagnostic device. 
+This project is an **experimental prototype and research exploration**. It is **NOT** a clinically validated medical diagnostic device.
 
-For full legal and medical disclaimers, please read [`docs/DISCLAIMER.md`](docs/DISCLAIMER.md).
+Do not use this system to diagnose, treat, cure, or prevent any disease. See [`docs/DISCLAIMER.md`](docs/DISCLAIMER.md) for the full disclaimer.
 
 ---
 
 ## 📚 References & Acknowledgements
 
-* **[Edge Impulse](https://www.edgeimpulse.com/):** For model training, DSP block generation, and C++ SDK export.
-* **[TensorFlow Lite for Microcontrollers](https://www.tensorflow.org/lite/microcontrollers):** On-device neural network runtime engine.
-* **[CMSIS-DSP](https://arm-software.github.io/CMSIS_5/DSP/html/index.html):** Arm CMSIS-DSP library for accelerated embedded signal processing.
-* **[Adafruit MLX90614 Library](https://github.com/adafruit/Adafruit-MLX90614-Library):** Arduino I²C driver for the MLX90614 IR sensor.
+| Resource | Role in This Project |
+| :--- | :--- |
+| [Edge Impulse](https://www.edgeimpulse.com/) | Model training platform, DSP block generation, C++ SDK export |
+| [TensorFlow Lite for Microcontrollers](https://www.tensorflow.org/lite/microcontrollers) | On-device neural network inference runtime |
+| [CMSIS-DSP](https://arm-software.github.io/CMSIS_5/DSP/html/index.html) | Arm DSP library for signal processing acceleration |
+| [Adafruit MLX90614 Library](https://github.com/adafruit/Adafruit-MLX90614-Library) | Arduino I²C driver for the MLX90614 sensor |
 
 ---
 
 ## 🏷️ Suggested GitHub Topics
 
-For optimal repository discovery on GitHub, the following topic tags are recommended:
-`tinyml`, `edge-impulse`, `tflite-micro`, `embedded-ml`, `mlx90614`, `arduino`, `edge-ai`, `cpp`
+`tinyml` · `edge-impulse` · `tflite-micro` · `embedded-ml` · `mlx90614` · `arduino` · `infrared-thermometer` · `proof-of-concept`

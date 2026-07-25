@@ -6,5 +6,15 @@ build/
 *.map
 *.o
 *.a
+*.d
+*.lst
+
+# IDE and editor files
 .vscode/
+*.swp
+*.swo
+*~
+
+# OS files
 .DS_Store
+Thumbs.db
