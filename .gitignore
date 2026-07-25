@@ -1,0 +1,10 @@
+# Arduino / C++ / Embedded Ignores
+build/
+*.elf
+*.hex
+*.bin
+*.map
+*.o
+*.a
+.vscode/
+.DS_Store
