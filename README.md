@@ -33,8 +33,6 @@ The tympanic region is anatomically adjacent to cerebral arterial pathways. This
 | SDA | SDA | 4.7 kΩ pull-up to VCC if not on breakout board |
 | SCL | SCL | 4.7 kΩ pull-up to VCC if not on breakout board |
 
-> `[ Hardware photograph placeholder ]`
-
 ---
 
 ## 💻 Software Stack
@@ -110,8 +108,6 @@ readObjectTempC()  ──►  features[0..7]  ──►  Spectral DSP (13 featur
                                         normal: 0.xxxx
                                         stroke: 0.xxxx
 ```
-
-> `[ Architecture diagram placeholder ]`
 
 For a detailed technical breakdown, see [`docs/INFERENCE_PIPELINE.md`](docs/INFERENCE_PIPELINE.md).
 
@@ -199,9 +195,3 @@ Do not use this system to diagnose, treat, cure, or prevent any disease. See [`d
 | [TensorFlow Lite for Microcontrollers](https://www.tensorflow.org/lite/microcontrollers) | On-device neural network inference runtime |
 | [CMSIS-DSP](https://arm-software.github.io/CMSIS_5/DSP/html/index.html) | Arm DSP library for signal processing acceleration |
 | [Adafruit MLX90614 Library](https://github.com/adafruit/Adafruit-MLX90614-Library) | Arduino I²C driver for the MLX90614 sensor |
-
----
-
-## 🏷️ Suggested GitHub Topics
-
-`tinyml` · `edge-impulse` · `tflite-micro` · `embedded-ml` · `mlx90614` · `arduino` · `infrared-thermometer` · `proof-of-concept`
