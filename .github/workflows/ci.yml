@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  firmware-build:
+    name: ESP32 Firmware Compilation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+        with:
+          version: "1.5.1"
+
+      - name: Cache Arduino packages and staging
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15/packages
+            ~/.arduino15/staging
+          key: ${{ runner.os }}-arduino-cli-1.5.1-esp32-2.0.17-mlx90614-2.1.6
+
+      - name: Configure Arduino CLI & Install ESP32 Core
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config set board_manager.additional_urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@2.0.17
+          arduino-cli core list
+
+      - name: Install Sensor Library
+        run: |
+          arduino-cli lib install "Adafruit MLX90614 Library@2.1.6"
+
+      - name: Stage Firmware Sketch
+        run: |
+          mkdir -p "$RUNNER_TEMP/neuro"
+          cp neuro.ino "$RUNNER_TEMP/neuro/neuro.ino"
+
+      - name: Compile ESP32 Firmware
+        run: |
+          arduino-cli compile \
+            --fqbn esp32:esp32:esp32 \
+            --library "$GITHUB_WORKSPACE/Neuro_Frost_inferencing" \
+            --warnings default \
+            "$RUNNER_TEMP/neuro"
