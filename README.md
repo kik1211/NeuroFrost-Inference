@@ -1,5 +1,7 @@
 # 🧠 In-Ear Neurothermal Anomaly Detection via Embedded ML
 
+[![CI](https://github.com/kik1211/NeuroFrost-Inference/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kik1211/NeuroFrost-Inference/actions/workflows/ci.yml)
+
 An experimental embedded machine learning proof-of-concept that classifies temporal infrared thermal patterns from the ear canal using non-contact thermometry and a quantized neural network running entirely on a microcontroller.
 
 > **⚠️ This is a research prototype. It is NOT a medical device. See [Disclaimer](docs/DISCLAIMER.md).**
